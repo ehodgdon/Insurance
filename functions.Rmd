@@ -1,0 +1,317 @@
+#
+# Definition of functions
+#
+training_nzv <- c(4,9)
+# 
+# remove rows that contains NAs
+#
+remove_nas_rows <- function(df) {
+  cnt <- df %>% summarize_all(~ sum(is.na(.)))
+  number_of_nas <- sum(cnt)
+  if (number_of_nas > 0){
+    df <- na.omit(df)
+    print(cat("Number of NAs:", number_of_nas))
+  }
+  return (df)
+}
+
+#
+# remove rows the contain blanks
+#
+remove_blank_rows <- function(df) {
+  cnt <- sum(is.null(df))
+  number_of_nulls <- sum(cnt)
+  if (number_of_nulls > 0) {
+    df[df == "NULL"] <- NA
+    df <- na.omit(df)
+    print(cat("Number of blanks: ", number_of_nulls))
+    }
+  return (df)
+}
+
+# 
+# remove columns with near zero variance 
+#
+# Using the nearZeroVar() function from the caret package, we can determine which predictors 
+# are near zero variance and therefore would not be a good feature.
+# if near_zero-var defined, use it, otherwise calculate
+remove_nearZeroVar <- function(df, near_zero_var = NULL) { 
+  ifelse (length(near_zero_var) == 0,   training_nzv <<- nearZeroVar(df), training_nzv <<- near_zero_var)
+  if (length(training_nzv) > 0) {
+    for (i in training_nzv) {
+      print(cat('***', i, ' ', colnames(df)[i]))
+    }
+    df <- df[, -training_nzv]  # remove near zero variances
+  }  # end of if (length(training_nzv) ...
+  return (df)
+}  
+
+#
+# Convert the Gender column from "Male" and "Female" to 0 and 1 and
+# also checks that the only entries in the column are "Male" and "Female"
+#
+convert_gender <- function(df) {
+  unique <- unique(df$Gender)
+  unique <- setdiff(unique, c("Male","Female"))
+  
+  for (u in unique) {
+     df <- df[df$Gender != u,]
+    }
+
+
+  df$Gender <- ifelse(df$Gender == "Male", 1, 0)
+  return (df)
+}
+
+#
+# Convert the Vehicle_Damage column from "Yes" and "No" to 1 and 0, respectively
+# also check for any rogue rowws that contain something other thean "Yes" or "No"
+#
+convert_vehicle_damage <- function(df) {
+  unique <- unique(df$Vehicle_Damage)
+  unique <- setdiff(unique, c("Yes","No"))
+  
+  for (u in unique) {
+    df <- df[df$Vehicle_Damage != u,]
+   }
+
+  df$Vehicle_Damage <- ifelse(df$Vehicle_Damage == "Yes", 1, 0)
+  return (df)
+}
+
+#
+#
+#
+convert_vehicle_age <- function(df) {
+  unique  <- unique(df$Vehicle_Age)
+  unique <- c("< 1 Year", "1-2 Year", "> 2 Years")
+  for (age in unique) {
+    df$Vehicle_Age[df$Vehicle_Age == age] <- which(unique == age)
+  }
+  df <- df %>% mutate(Vehicle_Age = as.integer(Vehicle_Age))
+  return (df)
+}
+
+# ###################################################################################################
+# Graphing/Listing
+# ###################################################################################################
+summary_graphing <- function(df) {
+  nrecs <- nrow(df)
+  mean_age <- mean(df$Age)
+  
+  yes_percent <- 100 * length(df$Response[df$Response == 1])/ nrecs
+  no_percent <- 100 - yes_percent
+
+  insured <- length(df$Previously_Insured[df$Previously_Insured == 1])
+  not_insured <- nrow(df) - insured
+  insured_percent <- 100 * insured / nrecs
+  not_insured_percent <- 100 * not_insured / nrecs
+                                  
+  male_gender <- length(df$Gender[df$Gender == 1])
+  female_gender <- nrow(df) - male_gender
+  male_percent <- 100 * male_gender / nrecs
+  female_percent <- 100 * female_gender / nrecs
+  
+  yes_damage <- length(df$Vehicle_Damage[df$Vehicle_Damage == 1])
+  no_damage <- nrecs - yes_damage
+  yes_damage_percent <- 100 * yes_damage / nrecs
+  no_damage_percent <- 100 * no_damage / nrecs
+  
+
+  age1 <-100 * length(df$Year_1[df$Year_1 == 1]) / nrecs
+  age2 <-100 * length(df$Year_1_2[df$Year_1_2 == 1]) / nrecs
+  age3 <-100 * length(df$Year_2[df$Year_2 == 1]) / nrecs
+  
+  value <- c(male_percent, female_percent, no_percent, yes_percent, not_insured_percent, insured_percent, no_damage_percent, yes_damage_percent, age1, age2, age3 )
+  feature  <- c(rep("Gender" , 2) , rep("Response" , 2) , rep("Prev Insured", 2), rep("Vehicle Damaged", 2),rep("Vehicle Age" , 3)  )
+  condition <- c("Male", "Female", "No", "Yes", "No", "Yes", "No", "Yes", "<1",  "1-2", ">2")
+  
+  data <- data.frame(feature,condition,value)
+  data$Id <- c(1:11)
+  # print(data)
+
+  ggplot(data, aes(fill=condition, y=value, x=feature, group=Id)) + 
+      geom_bar(position="dodge", show.legend=TRUE, stat="identity", width = 0.6) +
+      ylab("Percent of sample") +
+      ylim(0, 100) +
+      scale_x_discrete(limits = feature)
+}
+
+#
+# List columns
+#
+list_column_definitions <- function(df) {
+  col1 <- colnames(df)
+  col2 <- sapply(df, function(x) {class(x[1])})
+  col3 <- sapply(df, function(x) {z <- length(unique(x))})
+  
+  tbl <- data.frame("Name" = col1, "Class" = col2, "Unique" = col3)
+  # print(tbl)
+  return (tbl)
+}
+
+
+
+# ###################################################################################################
+# training modules
+# ###################################################################################################
+# 
+# Function to build accuracy table for display
+#
+disp_fcn <- function(rslts, title) {
+  disp_df <- rslts %>% select(-1)           #remove first column
+  colnames(disp_df) <-c('Accuracy', 'Sensitivity', 'Specificity')
+  if (nrow(rslts) >= 2 )  {
+    disp_df["MinMax"] <- ' '
+    index <- which.min(disp_df$Accuracy)
+    disp_df[index, "MinMax"] <- "Minimum"
+    index <- which.max(disp_df$Accuracy)
+    disp_df[index, "MinMax"] <- "Maximum"
+    colnames(disp_df) <-c('Accuracy', 'Sensitivity', 'Specificity', 'MinMax')
+    }
+  model_accuracy <- mean(disp_df$Accuracy)
+  disp_df <- disp_df %>% mutate(across(c('Accuracy','Sensitivity', 'Specificity'), round, 4))
+  disp_df[nrow(disp_df)+1,] <- c("Average", round(model_accuracy, 4), "", "")
+  
+  knitr::kable(disp_df, digits = 4, format = "html", format.args = (list(scientific=FALSE)),  
+                table.attr = "style='width:70%;' ")  |> kable_styling(bootstrap_options = c("striped", "hover"),                        position =  c("center"))
+ 
+}
+#
+# random forest
+#
+random_forest_train <- function(train_data) {
+  train_set_x <- train_data %>% select(-Response)    # remove Response column for set
+  train_set_y <- as.factor(train_data$Response)
+  control <- trainControl(method = "cv", number = 5)
+  grid <- data.frame(mtry = c(1,2,3))
+  train_rf <- train(train_set_x, train_set_y, method="rf", ntree = 500, 
+              trControl = control, tuneGrid = grid, nsamp = 10000)
+  return (train_rf)
+}
+random_forest_test <- function(test_data, fit) {
+  test_set_x <- test_data %>% select(-Response)
+  test_set_y <- as.factor(test_data$Response)
+  y_hat <- predict(fit, test_set_x, type = "raw")
+  rf_cm <- confusionMatrix(y_hat, factor(test_set_y))
+  rf_results[nrow(rf_results)+1,] <<- list("rf", rf_cm$overall["Accuracy"], 
+                                                 rf_cm$byClass["Sensitivity"], 
+                                                 rf_cm$byClass["Specificity"])
+  colnames(rf_results) <- columns
+  return (rf_cm)
+}
+random_forest <- function(train_data, testing_sets) {
+  rf_fit <- random_forest_train(train_data)
+  lapply(testing_sets, random_forest_test, rf_fit)
+  rf_cm <<- random_forest_test(testing_set, rf_fit)
+  return (rf_fit)
+}
+
+#
+# Naive Bayes
+#
+naive_bayes_train <- function(train_data) {
+  train_set_x <- train_data %>% select(-Response)    # remove Response column for set
+  train_set_y <- as.factor(train_data$Response)
+  control <- trainControl(method = "cv", number = 10)
+  train_nb<- train(train_set_x, train_set_y, method = "naive_bayes", trControl = control, usepoisson=TRUE)
+  return (train_nb)
+}
+
+naive_bayes_test <- function(test_data, fit) { 
+  test_set_x <- test_data %>% select(-1)
+  test_set_y <- as.factor(test_data$Response)
+  y_hat <- predict(fit, test_set_x, type="raw")
+  nb_cm <- confusionMatrix(y_hat, factor(test_set_y))
+  nb_results[nrow(nb_results)+1,] <<- list("naiveBayes", nb_cm$overall["Accuracy"], 
+                                                         nb_cm$byClass["Sensitivity"], 
+                                                         nb_cm$byClass["Specificity"])
+  colnames(nb_results) <- columns                                                         
+  return (nb_cm)
+}  
+
+naive_bayes <- function(train_data, testing_sets) {
+  nb_fit <- naive_bayes_train(train_data)
+  lapply(testing_sets, naive_bayes_test, nb_fit)
+  nb_cm <<- random_forest_test(testing_set, nb_fit)
+  return (nb_fit)
+}
+
+#
+# decision trees
+#head(training_data)
+dt_training <- function(training_data) {
+  training_set_x <- training_data %>% select(-Response)
+  training_set_y <- as.factor(training_data$Response)            
+  tree <- rpart(Response ~., data = training_data)
+  rplot.plot(tree)
+  
+  dt_fit <- train(tree, training_set_y, type="class")
+  cm <- confusionMatrix(t_fit, training_set_y, positive="y")
+  return (cm)
+  
+  
+}
+
+
+hist_graph <- function(df) {
+library(ggplot2)
+# Create an example dataset
+data <- data.frame(
+  group = rep(c("Group A", "Group B", "Group C"), each = nrow(df)),
+  value = c(df$Age, df$Vehicle_Age, df$Region_Code)
+)
+# Create multiple histograms using facets
+ggplot(data, aes(x = value)) +
+  geom_histogram(binwidth = 0.5, fill = "steelblue") +
+  labs(title = "Multiple Histograms", x = "Value", y = "Frequency") +
+  facet_wrap(~ group, nrow = 2) +
+  theme_minimal()
+}
+
+# abc <- original_data
+# abc["Yes"] <- rep(c(1), nrow(abc))
+# xyz <- abc %>% pivot_wider(names_from = Vehicle_Age,  values_fill=c(0), values_from=c(Yes))
+    
+# head(xyz,10)
+
+# ###################################################################################################
+# Summary
+# ###################################################################################################
+
+find_max_value <- function(dp) {
+  index <- which.max(dp$Accuracy)
+  return (dp[index, ])
+}
+
+add_summary_row <- function(dp) {
+  summary_table[nrow(summary_table)+1,] <- dp[which.max(dp$Accuracy),]
+}
+
+build_summary_table <- function() {
+  # summary_table[nrow(summary_table)+1,] <- add_summary_row(knn_results)
+  summary_table[nrow(summary_table)+1,] <- add_summary_row(rf_results)
+  # summary_table[nrow(summary_table)+1,] <- add_summary_row(ensemble_results)
+  summary_table[nrow(summary_table)+1,] <- add_summary_row(nb_results)
+  
+  # Add all rows from the glm_results since only one result per test was included
+  # summary_table <- full_join(summary_table, glm_results)
+  # put into descending accuracy order
+  summary_table <<- summary_table[order(-summary_table$Accuracy),]
+ 
+}
+
+
+# ###################################################################################################
+# Messaging
+# ###################################################################################################
+nzv_message <- function(nzv) {
+  if (length(nzv) == 0) 
+     msg <- "No columns were removed"
+  if (length(nzv) == 1)
+    msg <- "One column was removed"
+  if (length(nzv) > 1)
+     msg <- paste(as.character(length(nzv)), "were removed")
+  return (msg)
+}
+

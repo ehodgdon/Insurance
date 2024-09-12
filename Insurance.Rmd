@@ -1,0 +1,223 @@
+---
+title: "Insurance Cross Selling (Kaggle)"
+author: "Ellis Hodgdon"
+date: "2024-09-03"
+output: html_document
+params:
+  number_of_test_sets:  10
+  number_of_training_rows: 25000
+  number_of_testing_rows: 2500
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+```{r initialization of global variables, echo=FALSE}
+columns <- c( "Model", "Accuracy", "Sensitivity", "Specificity")
+rf_results <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+nb_results <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+summary_table <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+rf_cm <- list()
+
+colnames(rf_results) <- columns
+colnames(nb_results) <- columns
+colnames(summary_table) <- columns
+         
+
+```
+
+## Introduction
+
+```{r libraries, echo = FALSE, warning = FALSE, include = FALSE}
+if (!require(dplyr)) install.packages("dplyr", verbose = FALSE)
+if (!require(caret)) install.packages("caret", verbose = FALSE)
+if (!require(rlist)) install.packages("rlist", verbose = FALSE)
+if (!require(tidyr)) install.packages("tidyr", verbose = FALSE)
+if (!require(kableExtra)) install.packages("kableExtra", verbose = FALSE)
+
+
+source("functions.Rmd")
+
+```
+
+#### Problem Definition
+
+Insurance companies that sell life, health, and property and casualty insurance are using machine learning (ML) to drive improvements in customer service, fraud detection, and operational efficiency. The data provided by an Insurance company which is not excluded from other companies to getting advantage of ML. This company provides Health Insurance to its customers. We can build a model to predict whether the policyholders (customers) from past year will also be interested in Vehicle Insurance provided by the company.  
+The goal is the predict if the policy holders (customers) would be interested in vehicle or other types of insurance.  
+Reference: https://www.kaggle.com/datasets/arashnic/imbalanced-data-practice
+
+#### Reading Data  
+##### This may take a few minutes
+
+```{r, read dataset, include=TRUE}
+original_data <- read.csv("files/insurance-train.csv") 
+original_nrecs <- nrow(original_data)
+raw_data <- original_data %>% remove_blank_rows() %>% remove_nas_rows() %>% remove_nearZeroVar() 
+raw_data <- raw_data %>% sample_n(nrow(raw_data) %/% 10) %>% convert_gender() %>% convert_vehicle_damage()
+nrecs <- nrow(raw_data)  
+cat("The original dataset contained ", format(original_nrecs, nsmall = 0, big.mark=","), "rows with ", format(ncol(original_data), nsmall = 0), " columns ") 
+#
+# at this point the 'raw_data' data frame is all numeric except for Vehicle_Age
+#
+```
+The cleaning process performed the following operations on the data:
+
+  * removal of an NAs   
+  * removal of any rows that contain blanks
+  * checks near zero variance and removes any columns that meet the criteria `r paste("(", nzv_message(training_nzv), ")")`
+  * converts the Gender column to a numeric 1 or 0
+  * converts the Vehicle_Damage column to a numeric 1 or 0
+
+At this point the dataset has been cleaned but still needs some additional work before modeling can commence. One column, Vehicle_Age, contains information that would be better serviced in three columns -- an age of less than 1 year, from 1 to 2 years, and over 2 years. Each of these values will be moved to its own column for analysis
+
+```{r pivot_wider to split the Vehicle_Age column}
+raw_data["Yes"] <- rep(c(1), nrow(raw_data))
+raw_data <- raw_data %>% pivot_wider(names_from = Vehicle_Age, values_from=c(Yes), values_fill = c(0))
+colnames(raw_data) <- gsub("< 1 Year", "Year_1", colnames(raw_data))
+colnames(raw_data) <- gsub('1-2 Year', 'Year_1_2', colnames(raw_data))
+colnames(raw_data) <- gsub("> 2 Years", "Year_2", colnames(raw_data))
+number_of_columns <- ncol(raw_data)
+```
+The dataset now contains `r number_of_columns` columns. The column Vehicle_Age has been removed to be replaced by three columns: 'Year_1', 'Year_1_2', and 'Year_2'. The dataset still contains the Response column which will be split off when we build the test sets.
+This dataset provides the following  information:
+
+* Demographics: Gender, Age, Region Code, has a Driver's Liceense
+* Vehicles: Vehicle Age, Damage, Previous;y Insured
+* Policy: Premium, Policy Sales Channel, Vintage
+
+Additionally, the features in the data set can be categorized as
+
+* Categorical Features: Gender, Vehicle_Age, Vehicle Damage
+* Numerical Features: id, Age, Driver's License, Region Code, Previously Insured, Annual Premium, Policy Sales Channel, Vintage, and Response
+
+```{r create training sets, echo = FALSE, include=FALSE}
+
+# create training set
+
+set.seed(2024)
+training_data <- raw_data %>% sample_n(params$number_of_training_rows)
+```
+
+```{r building datasets, echo=FALSE, message = FALSE, include=FALSE}
+testing_sets <- list()
+for (i in 1:params$number_of_test_sets) {
+  testing_set <- sample_n(raw_data, params$number_of_testing_rows)
+  testing_sets <- list.append(testing_sets, testing_set)
+  training_data <- anti_join(training_data, testing_set)             # remove those rows from the training set that are contained in a testing set
+}
+
+```
+
+
+## Exploratory Data Analysis
+
+#### Column Definition
+
+
+The column definitions and the number of unique values for each column after modifications of the original dataset are given in the following table:
+```{r, display column names, echo=FALSE}
+tbl <- list_column_definitions(raw_data)[,-1]
+kbl(tbl) %>% kable_styling(bootstrap_options = "striped", "bordered", full_width=TRUE, position="center")
+
+```
+### Prelminary Analysis
+
+We can determine several characteristics of the features of the data. The average age in `format(mean(raw_data$Age), nsmall = 1`. Graphing some of the these features provides more insight into the data.
+
+
+```{r summary plotting, echo = FALSE, fig.align = "center", fig.width = 8, fig.height = 5}
+  summary_graphing(training_data)
+```
+
+A couple of observations from this graph:  
+
+* Approximately half of the customer base has had some previous insurance
+* Females are a dominant component of the dataset
+* Most of the cars are less than two years old
+* Approximately half of the vehicles have been damaged
+    
+
+### Summary of Terms
+
+
+### Non-significant Features
+
+### Conversion to all-numeric dataset
+
+## Modeling
+We will investigate this dataset using five different models which are specific for binomial data: general linear modeling wiht the binomial subset, the k-nearest neight, random forest, decision trees, and naive Bayes. For each of these models we will train using the training data and test each model with `params$number_of_test_sets` test. For each model, the results of the tests will be shown and averaged.
+
+### General Linear Model
+
+### Nearest Neighbor
+
+### Random Forest
+Another popular data model for classificsation is random  forest. There are several parameters that can be tuned to adjust the model and we will need to build a multitude of trees. As a result of this, we will only use a five-fold cross validation. The results of the `r params$number_of_test_sets` test cases are as follows:
+```{r random forest model, echo=TRUE, warning=FALSE, include=TRUE}
+rf_fit <- random_forest(training_data, testing_sets)
+rf_mean <- mean(rf_results$Accuracy)
+disp_fcn(rf_results, 'Random Forest Summary')
+```
+The average of these `r params$number_of_test_sets` test cases is `r rf_mean`. We can see that the most important feature is whether the vehicle has been damaged followed closely by whether the customer has been previous insured.
+
+
+```{r display randomforest importance, echo = FALSE}
+  # random forest contains importance information
+  importance <- rf_fit$finalModel$importance
+  colnames(importance) <- c("Mean")
+  sorted_importance <- as.data.frame(importance[order(importance[,"Mean"]),]) * 100/ sum(importance)
+  colnames(sorted_importance) <- c("sorted_importance")
+  
+  
+  xlabls <- gsub("_", " ", rownames(sorted_importance))
+  ggplot(data=sorted_importance, aes(x = reorder(xlabls, -sorted_importance), y=sorted_importance, fill=reorder(xlabls, -sorted_importance))) + 
+    geom_bar(show.legend=FALSE, stat="identity") +
+    xlab("Feature") +
+    ylab("Percent") +
+    ylim(0, 50) +
+    ggtitle("Relative Importance") +
+    theme(plot.title = element_text(hjust = 0.5, size = 9)) +
+    guides(x = guide_axis(angle = 90))   
+
+
+```
+
+
+### Ensemble
+
+### Decision Trees
+
+### Naive Bayes
+Another model that was tried was the *naive Bayes* model which seeks the model the distribution of inputs but does not learn which features are most important. It is a Supervised Machine Learning ^[Supervised machine learning is a type of machine learning the learns the relationship between input and output] algorithm used to solve classification problems by following a probabilistic approach (Bayes Theorem). It assumes that all feature variables are independent.
+
+```{r naive Bayes model, echo=TRUE, include=TRUE}
+nb_fit <- naive_bayes(training_data, testing_sets)
+nb_mean <- mean(nb_results$Accuracy)
+disp_fcn(nb_results, 'Naive Bayes Summary')
+```
+
+
+
+## Conclusion
+A summary of the accuracy results for the models the were tested is:
+
+```{r creat summary table, echo=FALSE, include = FALSE}
+
+summary_table <- build_summary_table()
+```
+
+```{r display summary list, echo = FALSE}
+knitr::kable(summary_table,  digits = 4)
+
+```
+With a little more detail
+```{r summary details, echo=FALSE}
+  summary(summary_table)
+```
+
+
+
+
+
+
