@@ -17,10 +17,12 @@ knitr::opts_chunk$set(warning = FALSE)
 columns <- c( "Model", "Accuracy", "Sensitivity", "Specificity")
 rf_results <- data.frame(matrix(nrow = 0, ncol = length(columns)))
 nb_results <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+knn_results <- data.frame(matrix(nrow = 0, ncol = length(columns)))
 summary_table <- data.frame(matrix(nrow = 0, ncol = length(columns)))
 rf_cm <- list()
 
 colnames(rf_results) <- columns
+colnames(knn_results) <- columns
 colnames(nb_results) <- columns
 colnames(summary_table) <- columns
          
@@ -83,7 +85,7 @@ The dataset now contains `r number_of_columns` columns. The column Vehicle_Age h
 This dataset provides the following  information:
 
 * Demographics: Gender, Age, Region Code, has a Driver's Liceense
-* Vehicles: Vehicle Age, Damage, Previous;y Insured
+* Vehicles: Vehicle Age, Damage, Previously Insured
 * Policy: Premium, Policy Sales Channel, Vintage
 
 Additionally, the features in the data set can be categorized as
@@ -123,7 +125,7 @@ kbl(tbl) %>% kable_styling(bootstrap_options = "striped", "bordered", full_width
 ```
 ### Prelminary Analysis
 
-We can determine several characteristics of the features of the data. The average age in `format(mean(raw_data$Age), nsmall = 1`. Graphing some of the these features provides more insight into the data.
+We can determine several characteristics of the features of the data. The average age in `r `format(mean(raw_data$Age), nsmall = 1`. Graphing some of the these features provides more insight into the data.
 
 
 ```{r summary plotting, echo = FALSE, fig.align = "center", fig.width = 8, fig.height = 5}
@@ -146,21 +148,41 @@ A couple of observations from this graph:
 ### Conversion to all-numeric dataset
 
 ## Modeling
-We will investigate this dataset using five different models which are specific for binomial data: general linear modeling wiht the binomial subset, the k-nearest neight, random forest, decision trees, and naive Bayes. For each of these models we will train using the training data and test each model with `params$number_of_test_sets` test. For each model, the results of the tests will be shown and averaged.
+We will investigate this dataset using five different models which are specific for binomial data: general linear modeling with the binomial subset, the k-nearest height, random forest, decision trees, and naive Bayes. For each of these models we will train using the training data and test each model with `r params$number_of_test_sets` test. For each model, the results of the tests will be shown and averaged.
 
 ### General Linear Model
 
 ### Nearest Neighbor
+We use the k-NN (Nearest Neighbor) method of training which has a parameter k which can be modified to obtain the best accuracy. 
+We train with several values of k and then choose the one with the best accuracy.
+
+```{r knn model, echo=TRUE, include=TRUE, fig.width = 6, fig.height = 3}
+df_knn <- knn(training_data, testing_sets)
+```
+
+```{r display k graph, fig.width=6, fig.height = 3, fig.align="center"}
+# graph_knn(df_knn)
+ # final_k <- knn_fit$k[which.max(knn_fit$Accuracy)]
+```
+We find that the value for k for which the accuracy is maximium is `{final_k}`, and will use that value for the final training calculation.
+```{r final knn processing}
+disp_fcn(knn_results, "Summary of k-NN testing")
+colnames(knn_results) <- columns
+
+```
+
+
+
 
 ### Random Forest
 Another popular data model for classificsation is random  forest. There are several parameters that can be tuned to adjust the model and we will need to build a multitude of trees. As a result of this, we will only use a five-fold cross validation. The results of the `r params$number_of_test_sets` test cases are as follows:
-```{r random forest model, echo=TRUE, warning=FALSE, include=TRUE}
+
+```{r random forest model, echo=FALSE, warning=FALSE, include=TRUE}
 rf_fit <- random_forest(training_data, testing_sets)
 rf_mean <- mean(rf_results$Accuracy)
 disp_fcn(rf_results, 'Random Forest Summary')
 ```
-The average of these `r params$number_of_test_sets` test cases is `r rf_mean`. We can see that the most important feature is whether the vehicle has been damaged followed closely by whether the customer has been previous insured.
-
+The average of these `r params$number_of_test_sets` test cases is `r format(rf_mean, nsmall=4)`. We can see that the most important feature is whether the vehicle has been damaged followed closely by whether the customer has been previous insured.
 
 ```{r display randomforest importance, echo = FALSE}
   # random forest contains importance information
@@ -191,7 +213,7 @@ The average of these `r params$number_of_test_sets` test cases is `r rf_mean`. W
 ### Naive Bayes
 Another model that was tried was the *naive Bayes* model which seeks the model the distribution of inputs but does not learn which features are most important. It is a Supervised Machine Learning ^[Supervised machine learning is a type of machine learning the learns the relationship between input and output] algorithm used to solve classification problems by following a probabilistic approach (Bayes Theorem). It assumes that all feature variables are independent.
 
-```{r naive Bayes model, echo=TRUE, include=TRUE}
+```{r naive Bayes model, echo=FALSE, include=FALSE}
 nb_fit <- naive_bayes(training_data, testing_sets)
 nb_mean <- mean(nb_results$Accuracy)
 disp_fcn(nb_results, 'Naive Bayes Summary')
@@ -203,7 +225,7 @@ disp_fcn(nb_results, 'Naive Bayes Summary')
 A summary of the accuracy results for the models the were tested is:
 
 ```{r creat summary table, echo=FALSE, include = FALSE}
-
+colnames(knn_results) <- columns
 summary_table <- build_summary_table()
 ```
 

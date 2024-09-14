@@ -79,18 +79,6 @@ convert_vehicle_damage <- function(df) {
   return (df)
 }
 
-#
-#
-#
-convert_vehicle_age <- function(df) {
-  unique  <- unique(df$Vehicle_Age)
-  unique <- c("< 1 Year", "1-2 Year", "> 2 Years")
-  for (age in unique) {
-    df$Vehicle_Age[df$Vehicle_Age == age] <- which(unique == age)
-  }
-  df <- df %>% mutate(Vehicle_Age = as.integer(Vehicle_Age))
-  return (df)
-}
 
 # ###################################################################################################
 # Graphing/Listing
@@ -150,6 +138,13 @@ list_column_definitions <- function(df) {
   return (tbl)
 }
 
+#
+# graph k for knn
+#
+graph_knn <- function(df) {
+  sorted_k <- df[order(df$k),]
+  ggplot(sorted_k, aes(x = k, y= Accuracy)) + geom_line()
+}
 
 
 # ###################################################################################################
@@ -208,6 +203,75 @@ random_forest <- function(train_data, testing_sets) {
 }
 
 #
+# k-Nearest Neighbor
+#
+knn_test <- function(test_data, fit_knn){
+  df <- as.data.frame(test_data)
+  test_set_x <- df %>% select(-Response)
+  test_set_y <- as.factor(df$Response)
+
+  y_hat<- predict(fit_knn, test_set_x, type = "class")
+  knn_cm <- confusionMatrix(y_hat, factor(test_set_y))
+  knn_results[nrow(knn_results)+1,] <<- list("knn", knn_cm$overall["Accuracy"], 
+                                                   knn_cm$byClass["Sensitivity"], 
+                                                   knn_cm$byClass["Specificity"])
+  colnames(knn_results) <- columns
+  return 
+}
+knn_train <- function(train_data, test_sets) {
+  k_hist <- list()
+  train_set_x <- train_data %>% select(-Response)    # remove Response column for set
+  train_set_y <- as.factor(train_data$Response)
+  control <- trainControl(method = "cv", number = 10, p = 0.9)
+  train_knn1 <- train(train_set_x, train_set_y, method = "knn", trControl = control, 
+                    tuneGrid = data.frame(k = c(seq(3,12,3),20)))
+  df_knn1 <- train_knn1$results
+  k_hist <- list.append(k_hist, train_knn1$results)
+  max_accuracy <- which.max(train_knn1$results$Accuracy)
+  max_k <- train_knn1$results$k[max_accuracy]                # retrieve k-value for maximum accuracy
+  min_range <- max_k - 2
+  max_range <- max_k + 2
+  if (min_range < 1) {
+    min_range <- 1
+    }
+  range <- c(min_range, min_range+1, max_range-1, max_range)   # check values on either side of max k
+  
+  train_knn2 <- train(train_set_x, train_set_y, method = "knn", 
+                   tuneGrid = data.frame(k = range), trControl =control)
+  df_knn2 <- train_knn2$results
+  max_accuracy <- which.max(train_knn2$results$Accuracy)
+  final_k <- train_knn2$results$k[max_accuracy]                # retrieve k-value for maximum accuracy
+
+  df_knn <- train_knn <- merge(df_knn1, df_knn2, by=c("Accuracy", "k", "Kappa", "AccuracySD", "KappaSD"),
+                  all = TRUE)
+
+   train_knn <- train(train_set_x, train_set_y, method = "knn", 
+                   tuneGrid = data.frame(k = final_k), trControl =control)
+   fit_knn <- knn3(train_set_x, train_set_y, k = final_k)  
+
+   lapply(test_sets, knn_test, fit_knn)
+
+   all_k <- full_join(df_knn1, df_knn2)
+   sorted_k <- all_k[order(all_k$k),]
+   print(ggplot(sorted_k, aes(x=k, y=Accuracy)) + geom_line())  # print necessary since ggplot inside a function
+   return 
+  
+}
+knn <-function(train_data, test_sets) {
+  df_knn <- knn_train(train_data, test_sets)
+  colnames(knn_results) <- columns
+  print(knn_results)
+  
+  # lapply(testing_sets, knn_test, knn_fit)
+  # knn_cm <<- knn_test(testing_set, knn_fit)
+  return (df_knn)
+}
+
+  
+  
+
+
+#
 # Naive Bayes
 #
 naive_bayes_train <- function(train_data) {
@@ -239,7 +303,13 @@ naive_bayes <- function(train_data, testing_sets) {
 
 #
 # decision trees
-#head(training_data)
+#
+decision_tree_train <- function(train_data) {
+  train_set_x <- training_data %>% select(-Response)
+  train_set_y <- as.factor(training_data$Response)            
+
+
+}
 dt_training <- function(training_data) {
   training_set_x <- training_data %>% select(-Response)
   training_set_y <- as.factor(training_data$Response)            
@@ -289,7 +359,7 @@ add_summary_row <- function(dp) {
 }
 
 build_summary_table <- function() {
-  # summary_table[nrow(summary_table)+1,] <- add_summary_row(knn_results)
+  summary_table[nrow(summary_table)+1,] <- add_summary_row(knn_results)
   summary_table[nrow(summary_table)+1,] <- add_summary_row(rf_results)
   # summary_table[nrow(summary_table)+1,] <- add_summary_row(ensemble_results)
   summary_table[nrow(summary_table)+1,] <- add_summary_row(nb_results)
